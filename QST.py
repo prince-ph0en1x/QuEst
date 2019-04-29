@@ -4,6 +4,7 @@ import os
 from openql import openql as ql
 import re
 from qxelarator import qxelarator
+import numpy as np
 
 NUM_TRIAL = 100	# number of trials for each tomographic rotation
 NUM_QUBIT = 2 
@@ -92,3 +93,16 @@ t_prep()
 t_stat = t_trial()
 
 print(t_stat)
+
+
+from collections import OrderedDict
+from itertools import product as cartesian_product
+
+TOMOGRAPHY_GATES = OrderedDict([('I','qI'),
+								('X','qX'),
+								('Y','qY'),
+								('Z','qZ')])
+for gates in cartesian_product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
+	for qubit, gate in zip([0,1], gates):
+		print(gate+str(qubit)+" ",end="")
+	print()
