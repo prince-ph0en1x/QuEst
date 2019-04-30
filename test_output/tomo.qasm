@@ -4,5 +4,7 @@ qubits 2
 .QK1
     h q0
     cnot q0,q1
+z q0
+z q1
 measure q0
 measure q1

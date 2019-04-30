@@ -5,6 +5,8 @@ from openql import openql as ql
 import re
 from qxelarator import qxelarator
 import numpy as np
+from collections import OrderedDict
+from itertools import product as cartesian_product
 
 NUM_TRIAL = 100	# number of trials for each tomographic rotation
 NUM_QUBIT = 2 
@@ -40,7 +42,6 @@ def qasmVerConv():
         else:
             x = re.sub('\[','', line)
             x = re.sub('\]','', x)
-            print (x,end='')
             fileopt.write(x)
     file.close()
     fileopt.close()
@@ -57,15 +58,13 @@ def showQasm():
 """
 Append tomographic rotation and measure to the algorithm state.
 """
-def t_prep():
+def t_prep(t_rot):
     file = open("test_output/algo.qasm","r")
     fileopt = open("test_output/tomo.qasm","w")
     for line in file:
         fileopt.write(line)
     file.close()
-    #
-    # ADD TOMOGRAPHIC ROTATION HERE
-    #
+    fileopt.write(t_rot)
     for i in range(NUM_QUBIT):
     	fileopt.write("measure q"+str(i)+"\n")
     fileopt.close()
@@ -88,21 +87,21 @@ def t_trial():
 	return p
 
 stateprep()
-qasmVerConv()
-t_prep()
-t_stat = t_trial()
+
+TOMOGRAPHY_GATES = OrderedDict([('i','Identity'),
+								('x','Pauli-X'),
+								('y','Pauli-Y'),
+								('z','Pauli-Z')])
+
+t_stat = []
+for gates in cartesian_product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
+	t_rot = ""
+	for qubit, gate in zip([0,1], gates):
+		if gate != 'i':
+			t_rot += (gate+" q"+str(qubit)+"\n")
+		t_prep(t_rot)
+		t_stat.append(t_trial())
 
 print(t_stat)
 
-
-from collections import OrderedDict
-from itertools import product as cartesian_product
-
-TOMOGRAPHY_GATES = OrderedDict([('I','qI'),
-								('X','qX'),
-								('Y','qY'),
-								('Z','qZ')])
-for gates in cartesian_product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
-	for qubit, gate in zip([0,1], gates):
-		print(gate+str(qubit)+" ",end="")
-	print()
+# [array([0.51, 0.  , 0.  , 0.49]), array([0.48, 0.  , 0.  , 0.52]), array([0.53, 0.  , 0.  , 0.47]), array([0.  , 0.61, 0.39, 0.  ]), array([0.47, 0.  , 0.  , 0.53]), array([0.  , 0.37, 0.63, 0.  ]), array([0.52, 0.  , 0.  , 0.48]), array([0.52, 0.  , 0.  , 0.48]), array([0. , 0.5, 0.5, 0. ]), array([0.  , 0.55, 0.45, 0.  ]), array([0.  , 0.48, 0.52, 0.  ]), array([0.52, 0.  , 0.  , 0.48]), array([0.  , 0.47, 0.53, 0.  ]), array([0.44, 0.  , 0.  , 0.56]), array([0.  , 0.43, 0.57, 0.  ]), array([0.  , 0.61, 0.39, 0.  ]), array([0.  , 0.56, 0.44, 0.  ]), array([0.  , 0.43, 0.57, 0.  ]), array([0.  , 0.54, 0.46, 0.  ]), array([0.47, 0.  , 0.  , 0.53]), array([0.  , 0.51, 0.49, 0.  ]), array([0.48, 0.  , 0.  , 0.52]), array([0.  , 0.45, 0.55, 0.  ]), array([0.  , 0.53, 0.47, 0.  ]), array([0.5, 0. , 0. , 0.5]), array([0.46, 0.  , 0.  , 0.54]), array([0.41, 0.  , 0.  , 0.59]), array([0.  , 0.45, 0.55, 0.  ]), array([0.5, 0. , 0. , 0.5]), array([0.  , 0.43, 0.57, 0.  ]), array([0.47, 0.  , 0.  , 0.53]), array([0.41, 0.  , 0.  , 0.59])]
