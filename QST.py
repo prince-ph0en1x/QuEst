@@ -86,22 +86,62 @@ def t_trial():
 	    p[idx] += 1/NUM_TRIAL
 	return p
 
-stateprep()
-
 TOMOGRAPHY_GATES = OrderedDict([('i','Identity'),
 								('x','Pauli-X'),
 								('y','Pauli-Y'),
 								('z','Pauli-Z')])
 
-t_stat = []
-for gates in cartesian_product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
-	t_rot = ""
-	for qubit, gate in zip([0,1], gates):
-		if gate != 'i':
-			t_rot += (gate+" q"+str(qubit)+"\n")
+def t_zhist():
+	t_stat = []
+	for gates in cartesian_product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
+		t_rot = ""
+		for qubit, gate in zip([0,1], gates):
+			#print(gate+str(qubit)+" ",end="")
+			if gate != 'i':
+				t_rot += (gate+" q"+str(qubit)+"\n")	# is this correct?
 		t_prep(t_rot)
 		t_stat.append(t_trial())
+		#print()
+	return t_stat
 
-print(t_stat)
+#stateprep()
+#print(t_zhist())
 
-# [array([0.51, 0.  , 0.  , 0.49]), array([0.48, 0.  , 0.  , 0.52]), array([0.53, 0.  , 0.  , 0.47]), array([0.  , 0.61, 0.39, 0.  ]), array([0.47, 0.  , 0.  , 0.53]), array([0.  , 0.37, 0.63, 0.  ]), array([0.52, 0.  , 0.  , 0.48]), array([0.52, 0.  , 0.  , 0.48]), array([0. , 0.5, 0.5, 0. ]), array([0.  , 0.55, 0.45, 0.  ]), array([0.  , 0.48, 0.52, 0.  ]), array([0.52, 0.  , 0.  , 0.48]), array([0.  , 0.47, 0.53, 0.  ]), array([0.44, 0.  , 0.  , 0.56]), array([0.  , 0.43, 0.57, 0.  ]), array([0.  , 0.61, 0.39, 0.  ]), array([0.  , 0.56, 0.44, 0.  ]), array([0.  , 0.43, 0.57, 0.  ]), array([0.  , 0.54, 0.46, 0.  ]), array([0.47, 0.  , 0.  , 0.53]), array([0.  , 0.51, 0.49, 0.  ]), array([0.48, 0.  , 0.  , 0.52]), array([0.  , 0.45, 0.55, 0.  ]), array([0.  , 0.53, 0.47, 0.  ]), array([0.5, 0. , 0. , 0.5]), array([0.46, 0.  , 0.  , 0.54]), array([0.41, 0.  , 0.  , 0.59]), array([0.  , 0.45, 0.55, 0.  ]), array([0.5, 0. , 0. , 0.5]), array([0.  , 0.43, 0.57, 0.  ]), array([0.47, 0.  , 0.  , 0.53]), array([0.41, 0.  , 0.  , 0.59])]
+#i0 i1 [0.54, 0.  , 0.  , 0.46]
+#i0 x1 [0.  , 0.44, 0.56, 0.  ]
+#i0 y1 [0. , 0.5, 0.5, 0. ]
+#i0 z1 [0.58, 0.  , 0.  , 0.42]
+#x0 i1 [0.  , 0.53, 0.47, 0.  ]
+#x0 x1 [0.52, 0.  , 0.  , 0.48]
+#x0 y1 [0.55, 0.  , 0.  , 0.45]
+#x0 z1 [0.  , 0.45, 0.55, 0.  ]
+#y0 i1 [0.  , 0.41, 0.59, 0.  ]	
+#y0 x1 [0.42, 0.  , 0.  , 0.58]
+#y0 y1 [0.48, 0.  , 0.  , 0.52]
+#y0 z1 [0.  , 0.49, 0.51, 0.  ]
+#z0 i1 [0.55, 0.  , 0.  , 0.45]
+#z0 x1 [0.  , 0.61, 0.39, 0.  ]
+#z0 y1 [0.  , 0.46, 0.54, 0.  ]
+#z0 z1 [0.51, 0.  , 0.  , 0.49]
+
+all_hits = [0.5,0,0,0.5,0,0.5,0.5,0,0,0.5,0.5,0,0.5,0,0,0.5]
+
+rho = np.zeros((2**NUM_QUBIT,2**NUM_QUBIT))*complex(0,0)
+
+i = 0
+for gates in cartesian_product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
+	ppm = [1]
+	for pm in gates:
+		if pm == 'i':
+			ppm = np.kron([[1,0],[0,1]],ppm)
+		elif pm == 'x':
+			ppm = np.kron([[0,1],[1,0]],ppm)
+		elif pm == 'y':
+			ppm = np.kron([[0,complex(0,-1)],[complex(0,1),0]],ppm)
+		elif pm == 'z':
+			ppm = np.kron([[1,0],[0,-1]],ppm)
+	rho += all_hits[i]*ppm/(2**NUM_QUBIT)
+	print(ppm,i)
+	i += 1
+
+print(rho)
