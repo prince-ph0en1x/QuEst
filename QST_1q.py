@@ -20,7 +20,8 @@ def stateprep():
     platform = ql.Platform('platform_none', config_fn)
     prog = ql.Program('p_name', platform, NUM_QUBIT)
     k1 = ql.Kernel('QK1',platform, NUM_QUBIT)
-    k1.ry(0,np.pi/2)		# Create Superposition
+    #k1.ry(0,np.pi/2)		# Create Superposition
+    k1.gate('h',[0])		# Create Superposition
     prog.add_kernel(k1)
     prog.compile()
     qasmVerConv()
@@ -90,6 +91,15 @@ TOMOGRAPHY_GATES = OrderedDict([('i','Identity'),
 								('y','Pauli-Y'),
 								('z','Pauli-Z')])
 
+sg0 = [[1,0],[0,1]]							# Identity
+sg1 = [[0,1],[1,0]]							# Pauli-X
+sg2 = [[0,complex(0,-1)],[complex(0,1),0]]	# Pauli-Y
+sg3 = [[1,0],[0,-1]]						# Pauli-Z
+
+"""
+vvvvvvv  HERE BE DRAGONS vvvvvvv
+"""
+
 def t_zhist():
 	t_stat = []
 	for gates in cartesian_product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
@@ -107,42 +117,30 @@ def t_zhist():
 		#print()
 	return t_stat
 
+def t_getdm():
+	rho = np.zeros((2**NUM_QUBIT,2**NUM_QUBIT))*complex(0,0)
+	idx = 0
+	for gates in cartesian_product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
+		ppm = [1]
+		for pm in gates:
+			if pm == 'i':
+				ppm = np.kron(sg0,ppm)
+			elif pm == 'x':
+				ppm = np.kron(sg1,ppm)
+			elif pm == 'y':
+				ppm = np.kron(sg2,ppm)
+			elif pm == 'z':
+				ppm = np.kron(sg3,ppm)
+		[e_val,e_vec]=np.linalg.eig(ppm)
+		Si = 0
+		evn = 0
+		for ev in e_val:
+			Si += hist[idx][evn]*ev  # Stokes parameter {S0 = Z0 + Z1; S1 = X0 - X1; S2 = Y0 - Y1; S3 = Z0 - Z1}
+			evn += 1
+		rho += Si*ppm/(2**NUM_QUBIT)
+		idx += 1
+	return rho
+
 stateprep()
-hist = t_zhist() # {(Z0,Z1),(X0,X1),(Y0,Y1),(Z0,Z1)}
-print(hist)
-# Stokes parameter
-# S0 = Z0 + Z1
-# S1 = X0 - X1
-# S2 = Y0 - Y1
-# S3 = Z0 - Z1
-S = [1,0,-1,0] # k1.rx(0,-np.pi/2)
-S = [1,1,0,0] # k1.ry(0,np.pi/2)
-
-#		p0		, p1
-#i0		0.54	, 0.
-#x0		0.  	, 1
-#y0		0. 		, 0.5
-#z0 	0.58	, 0.
-
-
-#all_hits = [0.5,0,0,0.5,0,0.5,0.5,0,0,0.5,0.5,0,0.5,0,0,0.5]
-
-
-rho = np.zeros((2**NUM_QUBIT,2**NUM_QUBIT))*complex(0,0)
-
-i = 0
-for gates in cartesian_product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
-	ppm = [1]
-	for pm in gates:
-		if pm == 'i':
-			ppm = np.kron([[1,0],[0,1]],ppm)
-		elif pm == 'x':
-			ppm = np.kron([[0,1],[1,0]],ppm)
-		elif pm == 'y':
-			ppm = np.kron([[0,complex(0,-1)],[complex(0,1),0]],ppm)
-		elif pm == 'z':
-			ppm = np.kron([[1,0],[0,-1]],ppm)
-	rho += S[i]*ppm/(2**NUM_QUBIT)
-	i += 1
-
-print(rho)
+hist = t_zhist()
+print(t_getdm())

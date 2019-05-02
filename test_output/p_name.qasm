@@ -3,4 +3,4 @@ version 1.0
 qubits 1
 
 .QK1
-    ry q[0], 1.570796
+    h q[0]

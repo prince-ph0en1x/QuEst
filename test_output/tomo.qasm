@@ -2,6 +2,6 @@
 qubits 1
 
 .QK1
-    ry q0, 1.570796
+    h q0
 rx q0, 0
 measure q0
