@@ -7,8 +7,8 @@ Current Version: Learning how to do QST
 * [Stokes parameters](https://qudev.phys.ethz.ch/content/QSIT16/talks/densityMatrix_stateTomography_ChunTat_Oscermann.pdf)
 
 ### Advanced Methods
-* Neural Network QST
-* Shadow State Tomography
+* [Neural Network QST](https://www.nature.com/articles/s41567-018-0048-5)
+* [Shadow State Tomography](https://arxiv.org/abs/1711.01053)
 
 ### Contact Points
 * [Neil Eelman](https://drexel.edu/fellowships/studentprofiles/profiles/Neil%20Eelman/)
