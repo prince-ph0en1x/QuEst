@@ -27,43 +27,6 @@ eig2 = [1, -1] # Eigenvalues of sg2
 eig3 = [1, -1] # Eigenvalues of sg3
 eigens = {'i':eig0, 'x':eig1, 'y':eig2, 'z':eig3}
 
-"""
-The stateprep method encapsulates the quantum algorithm which generates an unknown n-qubit quantum state from an n-qubit all-zero state
-We want to estimate the density matrix of this n-qubit evolved state using State Tomography
-"""
-def stateprep():
-    config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
-    platform = ql.Platform('platform_none', config_fn)
-    prog = ql.Program('p_name', platform, NUM_QUBIT)
-    k1 = ql.Kernel('QK1',platform, NUM_QUBIT)
-    k1.gate('h', [0])
-    k1.gate('h', [1])
-    k1.gate('h', [2])
-    prog.add_kernel(k1)
-    prog.compile()
-    qasmVerConv()
-    return "test_output/algo.qasm"
-
-
-"""
-Firefighting solution as Qxelarator is not updated to run cQASM v1.0
-Open Issue: https://github.com/QE-Lab/qx-simulator/issues/57
-Converts OpenQL generated cQASM to old Qxelerator compatible syntax
-"""
-def qasmVerConv():
-    file = open("test_output/p_name.qasm","r")
-    fileopt = open("test_output/algo.qasm","w")
-    header = True
-    for line in file:
-        if header:
-            header = False
-        else:
-            x = re.sub('\[','', line)
-            x = re.sub('\]','', x)
-            fileopt.write(x)
-    file.close()
-    fileopt.close()
-
 
 """
 Append tomographic rotations and measurements to base qasm and return path to new qasm file
@@ -129,19 +92,19 @@ def generate_histogram(qasm, trials):
 
 """
 Uses the math described here (http://research.physics.illinois.edu/QI/Photonics/tomography-files/tomo_chapter_2004.pdf)
-to reconstruct the density matrix from the tomographic histogram
+to construct the density matrix from the tomographic histogram
 """
 def generate_density_matrix(hist):
     dm = np.zeros((2**NUM_QUBIT, 2**NUM_QUBIT)) * 0j
     idx = 0
     for bases in product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
         ppm = [1]
-        e_val = [1]
+        eigs = [1]
         for b in bases:
             ppm = np.kron(sigmas[b], ppm)
-            e_val = np.kron(eigens[b], e_val)
+            eigs = np.kron(eigens[b], eigs)
 
-        Si = sum(np.multiply(e_val, hist[idx])) # Multiply each sign to its respective probability and sum
+        Si = sum(np.multiply(eigs, hist[idx])) # Multiply each sign to its respective probability and sum
         dm += Si*ppm
         idx += 1
 
@@ -199,24 +162,8 @@ def tomography(qasm, num_qubits, trials=100):
 
 
 """
-Runs Quantum State Tomography on a given qasm program and returns the expectation value of the Hamiltonian
+Returns the expectation value of a Hamiltonian associated with a given density matrix
 """
-def tomography_expectation(H, qasm, num_qubits, trials=100):
-    rho = tomography(qasm, num_qubits, trials=trials)
-    return np.trace(rho * H)
-
-
-if __name__ == '__main__':
-    import sys
-    qasm = "test_output/algo.qasm"
-
-    # Find the number of qubits in the program
-    with open(qasm, 'r') as f:
-        for line in f:
-            if line.startswith('qubits'):
-                q = int(line.split(' ')[1])
-                break
-
-    t = int(sys.argv[1])
-    dm = tomography(qasm, q, trials=t)
-    plot_results(dm)
+def expectation(rho, H):
+    expectation = np.trace(np.dot(rho, H))
+    return expectation
