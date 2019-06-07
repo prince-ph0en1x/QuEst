@@ -2,5 +2,5 @@
 qubits 2
 
 .QK1
-    h q0
-    cnot q0,q1
+    rx q0, 4.123124
+    rz q1, 6.234

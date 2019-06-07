@@ -56,7 +56,7 @@ def run_trials(qasm, trials):
     qx.set(qasm)
     p = np.zeros(2**NUM_QUBIT)
     c = np.zeros(NUM_QUBIT, dtype=bool)
-    for i in range(trials):
+    for _ in range(trials):
         qx.execute()
         for i in range(NUM_QUBIT):
             c[i] = qx.get_measurement_outcome(i)
