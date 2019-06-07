@@ -3,4 +3,5 @@ qubits 2
 
 .QK1
     h q0
-    cnot q0,q1
+    cr q0,q1,1.5708
+    h q1
