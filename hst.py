@@ -5,6 +5,7 @@ import re
 import os
 import sys
 from scipy.optimize import minimize
+from scipy.optimize import basinhopping
 
 
 NUM_QUBIT = 0
@@ -81,26 +82,24 @@ def post_hst_qasm():
 """
 Create the QASM for the test circuit using the provided parameters (e.g. angles)
 """
-def test_sequence_qasm(params):
+def test_sequence_qasm(params, locality, blocks):
     config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
     platform = ql.Platform('platform_none', config_fn)
     prog = ql.Program('tmp', platform, 2*NUM_QUBIT)
     k1 = ql.Kernel('QK1',platform, 2*NUM_QUBIT)
 
-    #for q in range(NUM_QUBIT + 1, 2*NUM_QUBIT):
-    #    k1.cnot(NUM_QUBIT, q)
+    for i in range(blocks):
+        for q in range(NUM_QUBIT):
+            b = q*NUM_QUBIT + 3*NUM_QUBIT*i
+            k1.rx(q + NUM_QUBIT, params[b])
+            k1.ry(q + NUM_QUBIT, params[b + 1])
+            k1.rz(q + NUM_QUBIT, params[b + 2])
 
-    #for q in range(NUM_QUBIT):
-    #    k1.ry(q + NUM_QUBIT, params[q])
-
-    k1.ry(2, params[0])
-    k1.rx(2, params[1])
-    k1.cnot(2, 3)
-    k1.rx(2, params[2])
-    k1.cnot(2, 3)
-    k1.ry(2, params[3])
-    k1.cnot(2, 3)
-    k1.rx(2, params[4])
+        for q in range(NUM_QUBIT, 2*NUM_QUBIT):
+            k = 1
+            while k < locality and q + k < 2*NUM_QUBIT:
+                k1.cz(q, q + k)
+                k += 1
 
     prog.add_kernel(k1)
     prog.compile()
@@ -124,22 +123,20 @@ def merge_qasms(pre, V, post):
     with open(V, 'r') as f:
         flag = False
         for line in f.readlines():
-            if line.startswith('.'): # Wait until a kernel is reached
-                flag = True
-                continue
             if flag:
                 lines.append(line)
+            elif line.startswith('.'): # Wait until a kernel is reached
+                flag = True
     
     lines.append('\n')
 
     with open(post, 'r') as f:
         flag = False
         for line in f.readlines():
-            if line.startswith('.'): # Wait until a kernel is reached
-                flag = True
-                continue
             if flag:
                 lines.append(line)
+            elif line.startswith('.'): # Wait until a kernel is reached
+                flag = True
     
     with open(qasm, 'w') as f:
         f.writelines(lines)
@@ -167,8 +164,8 @@ def evaluate_hst(qasm, trials=100):
     return p/trials
 
 
-def minimize_func(params, pre, post):
-    v_hst = test_sequence_qasm(params)
+def minimize_func(params, pre, post, locality, blocks):
+    v_hst = test_sequence_qasm(params, locality, blocks)
     hst = merge_qasms(pre, v_hst, post)
     cost = evaluate_hst(hst)
     return 1 - cost
@@ -198,9 +195,13 @@ if __name__ == '__main__':
     pre_hst = pre_hst_qasm(U)
     post_hst = post_hst_qasm()
 
-    x0 = [0, 0, 0, 0, 0] # for _ in range(NUM_QUBIT)
-    res = minimize(minimize_func, x0, args=(pre_hst, post_hst), method='Powell', tol=1e-6, options={'disp':True, 'return_all':True})
-    #print(minimize_func(x0, pre_hst, post_hst))
+    blocks = 1
+    locality = 2
+
+    x0 = [0 for _ in range(3*NUM_QUBIT*blocks)]
+    res = minimize(minimize_func, x0, args=(pre_hst, post_hst, locality, blocks), method='Powell', tol=1e-10, options={'disp':True, 'return_all':True})
+    #res = basinhopping(minimize_func, x0, minimizer_kwargs={'method':'Powell', 'args':(pre_hst, post_hst, locality, blocks)})
+    #print(minimize_func(x0, pre_hst, post_hst, locality, blocks))
     print('Params: ', res.x)
 
 
