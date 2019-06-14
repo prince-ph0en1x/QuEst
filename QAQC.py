@@ -5,7 +5,6 @@ import re
 import os
 import sys
 from scipy.optimize import minimize
-from scipy.optimize import basinhopping
 
 
 NUM_QUBIT = 0
@@ -91,7 +90,7 @@ def test_sequence_qasm(params, locality, blocks):
     for i in range(blocks):
         for q in range(NUM_QUBIT):
             b = q*NUM_QUBIT + 3*NUM_QUBIT*i
-            k1.rx(q + NUM_QUBIT, params[b])
+            k1.rz(q + NUM_QUBIT, params[b])
             k1.ry(q + NUM_QUBIT, params[b + 1])
             k1.rz(q + NUM_QUBIT, params[b + 2])
 
@@ -164,7 +163,7 @@ def evaluate_hst(qasm, trials=100):
     return p/trials
 
 
-def minimize_func(params, pre, post, locality, blocks):
+def hst_cost(params, pre, post, locality, blocks):
     v_hst = test_sequence_qasm(params, locality, blocks)
     hst = merge_qasms(pre, v_hst, post)
     cost = evaluate_hst(hst)
@@ -188,83 +187,3 @@ def qasmVerConv(qasm_in, qasm_out):
             fileopt.write(x)
     file.close()
     fileopt.close()
-
-
-if __name__ == '__main__':
-    U = read_input_circuit('test_output/algo.qasm')
-    pre_hst = pre_hst_qasm(U)
-    post_hst = post_hst_qasm()
-
-    blocks = 1
-    locality = 2
-
-    x0 = [0 for _ in range(3*NUM_QUBIT*blocks)]
-    res = minimize(minimize_func, x0, args=(pre_hst, post_hst, locality, blocks), method='Powell', tol=1e-10, options={'disp':True, 'return_all':True})
-    #res = basinhopping(minimize_func, x0, minimizer_kwargs={'method':'Powell', 'args':(pre_hst, post_hst, locality, blocks)})
-    #print(minimize_func(x0, pre_hst, post_hst, locality, blocks))
-    print('Params: ', res.x)
-
-
-"""
-    U = read_input_circuit('test_output/algo.qasm')
-    pre_hst = pre_hst_qasm(U)
-    post_hst = post_hst_qasm()
-
-    res = 15
-
-    X = []
-    Y = []
-    Z = []
-    angs1 = []
-    for a in range(-res, res+1):
-        ang1 = 2*np.pi/res * a
-        angs2 = []
-        costs = []
-        for b in range(-res, res+1):
-            ang2 = 2*np.pi/res * b
-            angs1.append(ang1)
-            angs2.append(ang2)
-            costs.append(minimize_func([ang1, ang2], pre_hst, post_hst))
-        X.append(angs1)
-        Y.append(angs2)
-        Z.append(costs)
-        angs1 = []
-
-    X = np.array(X)
-    Y = np.array(Y)
-    Z = np.array(Z)
-
-    from matplotlib import pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot_surface(X, Y, Z)
-    plt.show()
-"""
-
-"""
-    t = int(sys.argv[1])
-    r = int(sys.argv[2])
-    cost = []
-    angs = []
-    for ang in range(r):
-        angs.append(ang * 2*np.pi/r)
-        qasm = stateprep(ang * 2*np.pi/r)
-        qx = qxelarator.QX()
-        qx.set(qasm)
-
-        c = np.zeros(2*NUM_QUBIT, dtype=bool)
-        p = 0
-        for _ in range(t):
-            qx.execute()
-            for i in range(2*NUM_QUBIT):
-                c[i] = qx.get_measurement_outcome(i)
-            if sum(c) == 0:
-                p += 1
-        cost.append(p/t)
-
-    from matplotlib import pyplot as plt
-    plt.plot(angs, cost)
-    plt.plot([TEST_ANG, TEST_ANG], [0,1])
-    plt.show()
-"""

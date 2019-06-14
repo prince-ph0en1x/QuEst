@@ -22,10 +22,8 @@ sg3 = [[1, 0], [0,-1]] # Pauli-Z
 sigmas = {'i':sg0, 'x':sg1, 'y':sg2, 'z':sg3}
 
 eig0 = [1,  1] # Eigenvalues of sg0
-eig1 = [1, -1] # Eigenvalues of sg1
-eig2 = [1, -1] # Eigenvalues of sg2
-eig3 = [1, -1] # Eigenvalues of sg3
-eigens = {'i':eig0, 'x':eig1, 'y':eig2, 'z':eig3}
+eig1 = [1, -1] # Eigenvalues of sg1, sg2, sg3
+eigens = {'i':eig0, 'x':eig1, 'y':eig1, 'z':eig1}
 
 
 """

@@ -2,4 +2,5 @@
 qubits 2
 
 .QK1
-    ry q0, 2
+    rx q0,0.5
+    rx q1,0.5
