@@ -5,6 +5,9 @@ import re
 import os
 import sys
 from scipy.optimize import minimize
+from random import random
+from math import cos,sin
+from cmath import exp
 
 
 NUM_QUBIT = 0
@@ -14,7 +17,27 @@ NUM_QUBIT = 0
 
 
 """
-Read the lines of an input QASM circuit that is to be matched
+Firefighting solution as Qxelarator is not updated to run cQASM v1.0
+Open Issue: https://github.com/QE-Lab/qx-simulator/issues/57
+Converts OpenQL generated cQASM to old Qxelerator compatible syntax
+"""
+def qasmVerConv(qasm_in, qasm_out):
+    file = open(qasm_in,"r")
+    fileopt = open(qasm_out,"w")
+    header = True
+    for line in file:
+        if header:
+            header = False
+        else:
+            x = re.sub('\[','', line)
+            x = re.sub('\]','', x)
+            fileopt.write(x)
+    file.close()
+    fileopt.close()
+
+
+"""
+Read the lines of an input QASM circuit that is to be compiled against
 """
 def read_input_circuit(qasm):
     global NUM_QUBIT
@@ -56,20 +79,27 @@ def pre_hst_qasm(U):
 
 
 """
-Create the ending portion of the HST circuit
+Create the ending portion of the HST circuit. When qubit is None, the full HST circuit
+is created. Otherwise, the Local HST is created for the specified qubit number
 """
-def post_hst_qasm():
+def post_hst_qasm(qubit=None):
     config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
     platform = ql.Platform('platform_none', config_fn)
     prog = ql.Program('tmp', platform, 2*NUM_QUBIT)
     k1 = ql.Kernel('QK1',platform, 2*NUM_QUBIT)
 
-    for q in range(NUM_QUBIT):
-        k1.gate('cnot', [q, q + NUM_QUBIT])
-        k1.gate('h', [q])
+    if qubit is None:
+        for q in range(NUM_QUBIT):
+            k1.gate('cnot', [q, q + NUM_QUBIT])
+            k1.gate('h', [q])
 
-    for q in range(2 * NUM_QUBIT):
-        k1.measure(q)
+        for q in range(2 * NUM_QUBIT):
+            k1.measure(q)
+    else:
+        k1.gate('cnot', [qubit, qubit + NUM_QUBIT])
+        k1.gate('h', [qubit])
+        k1.measure(qubit)
+        k1.measure(qubit + NUM_QUBIT)
 
     prog.add_kernel(k1)
     prog.compile()
@@ -89,9 +119,9 @@ def test_sequence_qasm(params, locality, blocks):
 
     for i in range(blocks):
         for q in range(NUM_QUBIT):
-            b = q*NUM_QUBIT + 3*NUM_QUBIT*i
+            b = q*3 + 3*NUM_QUBIT*i
             k1.rz(q + NUM_QUBIT, params[b])
-            k1.ry(q + NUM_QUBIT, params[b + 1])
+            k1.rx(q + NUM_QUBIT, params[b + 1])
             k1.rz(q + NUM_QUBIT, params[b + 2])
 
         for q in range(NUM_QUBIT, 2*NUM_QUBIT):
@@ -159,31 +189,49 @@ def evaluate_hst(qasm, trials=100):
 
         if sum(c) == 0:
             p += 1
+    del qx
 
     return p/trials
 
 
-def hst_cost(params, pre, post, locality, blocks):
+def hst_cost(params, pre, post, locality, blocks, trials=100):
     v_hst = test_sequence_qasm(params, locality, blocks)
     hst = merge_qasms(pre, v_hst, post)
-    cost = evaluate_hst(hst)
+    cost = evaluate_hst(hst, trials=trials)
     return 1 - cost
 
-"""
-Firefighting solution as Qxelarator is not updated to run cQASM v1.0
-Open Issue: https://github.com/QE-Lab/qx-simulator/issues/57
-Converts OpenQL generated cQASM to old Qxelerator compatible syntax
-"""
-def qasmVerConv(qasm_in, qasm_out):
-    file = open(qasm_in,"r")
-    fileopt = open(qasm_out,"w")
-    header = True
-    for line in file:
-        if header:
-            header = False
-        else:
-            x = re.sub('\[','', line)
-            x = re.sub('\]','', x)
-            fileopt.write(x)
-    file.close()
-    fileopt.close()
+
+def optimize(qasm, locality, blocks, x0=None, tol=1e-6, disp=False, trials=100):
+    circ = read_input_circuit(qasm)
+    pre = pre_hst_qasm(circ)
+    post = post_hst_qasm()
+
+    if x0 is None:
+        x0 = [0 for _ in range(3*NUM_QUBIT*blocks)]
+    #    min_d = 1
+    #    min_x = [0 for _ in range(3*NUM_QUBIT*blocks)]
+    #    for _ in range(int(500/blocks/NUM_QUBIT)):
+    #        x = [random()*np.pi for _ in range(3*NUM_QUBIT*blocks)]
+    #        d = hst_cost(x, pre, post, locality, blocks)
+    #        if d < min_d:
+    #            min_x = x
+    #            min_d = d
+    #    x0 = min_x
+
+    res = minimize(hst_cost, x0, args=(pre, post, locality, blocks), method='Powell', tol=tol, options={'disp':disp, 'return_all':disp})
+    return res
+
+
+# Parameterized rotation gate matrices: http://www.mpedram.com/Papers/Rotation-based-DDSyn-QICJ.pdf
+
+
+def Rx(O):
+    return [[cos(O/2), -1j*sin(O/2)], [-1j*sin(O/2), cos(O/2)]]
+    
+
+def Ry(O):
+    return [[cos(O/2), -sin(O/2)], [sin(O/2), cos(O/2)]]
+
+                    
+def Rz(O):
+    return [[exp(-1j*O/2), 0], [0, exp(1j*O/2)]]

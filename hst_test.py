@@ -29,19 +29,68 @@ def test1(qasm):
 
 
 def test2(qasm):
-    U = QAQC.read_input_circuit(qasm)
-    pre_hst = QAQC.pre_hst_qasm(U)
-    post_hst = QAQC.post_hst_qasm()
-    blocks = 2
-    locality = 2
-
-    x0 = [0 for _ in range(3*QAQC.NUM_QUBIT*blocks)]
-    res = minimize(QAQC.hst_cost, x0, args=(pre_hst, post_hst, locality, blocks), method='Powell', tol=1e-6, options={'disp':True, 'return_all':True})
+    res = QAQC.optimize(qasm, 1, 1, tol=1e-5, disp=True)
     print('Params: ', res.x)
 
 
+def test3(qasm):
+    U = QAQC.read_input_circuit(qasm)
+    pre_hst = QAQC.pre_hst_qasm(U)
+    post_hst = QAQC.post_hst_qasm()
+    locality = 3
+    blocks = 2
+    x0 = [0 for _ in range(3*QAQC.NUM_QUBIT*blocks)]
+    inc = (-np.pi/2, -np.pi/4, 0, np.pi/4, np.pi/2)
+    min_cost = 1
+    
+    for _ in range(3):
+        costs = []
+        for i in range(len(x0)):
+            c = []
+            for j in inc:
+                x = list(x0)
+                x[i] += j
+                a = QAQC.hst_cost(x, pre_hst, post_hst, locality, blocks, trials=1000)
+                c.append(a)
+                if a < min_cost:
+                    min_cost = a
+            ind = c.index(min(c))
+            x0[i] += inc[ind]
+            costs.append(c)
+            if min_cost == 0:
+                break
+        if min_cost == 0:
+            break
+
+    for c in costs:
+        print(np.round(c, 3))
+    print()
+    print(x0)
+    print(min_cost)
+
+
+def test4(qasm):
+    U = QAQC.read_input_circuit(qasm)
+    pre_hst = QAQC.pre_hst_qasm(U)
+    post_hst = QAQC.post_hst_qasm()
+    locality = 2
+    blocks = 2
+    x0 = [0 for _ in range(3*QAQC.NUM_QUBIT*blocks)]
+    grad = []
+
+    for i in range(len(x0)):
+        l = []
+        for j in (np.pi/2, -np.pi/2):
+            x = list(x0)
+            x[i] += j
+            l.append(QAQC.hst_cost(x, pre_hst, post_hst, locality, blocks, trials=500))
+        grad.append(l[0]/2 - l[1]/2)
+
+    print(np.round(grad, 3))
+
+
 if __name__ == '__main__':
-    test1('test_output/algo.qasm')
+    test3("test_output/algo.qasm")
 
 
 """
