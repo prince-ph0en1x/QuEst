@@ -79,25 +79,17 @@ def kronecker(*args, repeat=1):
 
 if __name__ == '__main__':
     import sys
-    #qasm = "test_output/algo.qasm"
-
-    # Find the number of qubits in the program
-    #with open(qasm, 'r') as f:
-    #    for line in f:
-    #        if line.startswith('qubits'):
-    #            q = int(line.split(' ')[1])
-    #            break
 
     qasm = stateprep()
     t = int(sys.argv[1])
  
     C  = kronecker(Ry(ANG1), Ry(ANG2), Ry(ANG3))
     zero = np.zeros((2**NUM_QUBIT, 1))
-    zero[0] = 1
+    zero[0] = 1                                    # The initial state is the all-zero state
     S  = C @ zero
     S_ = np.transpose(S).conj()
 
-    H = kronecker(QST.sg3, repeat=NUM_QUBIT)
+    H = kronecker(QST.sg3, repeat=NUM_QUBIT)       # All 3 qubits are measured in the z-basis
 
     dm = QST.tomography(qasm, NUM_QUBIT, trials=t)
     e = QST.expectation(dm, H)

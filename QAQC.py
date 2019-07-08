@@ -4,13 +4,13 @@ from qxelarator import qxelarator
 import re
 import os
 import sys
-from scipy.optimize import minimize
-from random import random
+import random
 from math import cos,sin
 from cmath import exp
 
 
 NUM_QUBIT = 0
+qx = qxelarator.QX()
 
 
 # HST refers to Hilbert-Schmidt Test circuit from https://arxiv.org/pdf/1807.00800.pdf
@@ -179,7 +179,7 @@ This corresponds to the magnitude of the Hilbert-Schmidt inner product and is us
 function from the aforementioned paper
 """
 def evaluate_hst(qasm, trials=100):
-    qx = qxelarator.QX()
+    global qx
     qx.set(qasm)
 
     p = 0
@@ -189,7 +189,6 @@ def evaluate_hst(qasm, trials=100):
 
         if sum(c) == 0:
             p += 1
-    del qx
 
     return p/trials
 
@@ -201,25 +200,68 @@ def hst_cost(params, pre, post, locality, blocks, trials=100):
     return 1 - cost
 
 
-def optimize(qasm, locality, blocks, x0=None, tol=1e-6, disp=False, trials=100):
+def optimize(qasm, locality, blocks, runs=3, x0=None, trials=200):
     circ = read_input_circuit(qasm)
     pre = pre_hst_qasm(circ)
     post = post_hst_qasm()
 
     if x0 is None:
         x0 = [0 for _ in range(3*NUM_QUBIT*blocks)]
-    #    min_d = 1
-    #    min_x = [0 for _ in range(3*NUM_QUBIT*blocks)]
-    #    for _ in range(int(500/blocks/NUM_QUBIT)):
-    #        x = [random()*np.pi for _ in range(3*NUM_QUBIT*blocks)]
-    #        d = hst_cost(x, pre, post, locality, blocks)
-    #        if d < min_d:
-    #            min_x = x
-    #            min_d = d
-    #    x0 = min_x
 
-    res = minimize(hst_cost, x0, args=(pre, post, locality, blocks), method='Powell', tol=tol, options={'disp':disp, 'return_all':disp})
-    return res
+    inc = [-np.pi, -np.pi/2, 0, np.pi/2, np.pi]
+    min_cost = 1
+    min_x0 = []
+    order = list(range(len(x0)))
+
+    for z in range(runs):
+        if z == int(runs/1.5):
+            inc = [x/2 for x in inc]
+
+        random.shuffle(order)
+        for i in order:
+            c = []
+            for j in inc:
+                x = list(x0)
+                x[i] += j
+                a = hst_cost(x, pre, post, locality, blocks, trials=trials)
+                c.append(a)
+                if a < min_cost:
+                    min_cost = a
+                    min_x0 = list(x)
+            ind = c.index(min(c))
+            x0[i] += inc[ind]
+            if min_cost == 0:
+                break
+        if min_cost == 0:
+            break
+
+    return min_cost, min_x0
+
+
+def generate_output_qasm(params, locality, blocks):
+    config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
+    platform = ql.Platform('platform_none', config_fn)
+    prog = ql.Program('tmp', platform, NUM_QUBIT)
+    k1 = ql.Kernel('QAQC',platform, NUM_QUBIT)
+
+    for i in range(blocks):
+        for q in range(NUM_QUBIT):
+            b = q*3 + 3*NUM_QUBIT*i
+            k1.rz(q, -params[b])
+            k1.rx(q, -params[b + 1])
+            k1.rz(q, -params[b + 2])
+
+        for q in range(NUM_QUBIT):
+            k = 1
+            while k < locality and q + k < NUM_QUBIT:
+                k1.cz(q, q + k)
+                k += 1
+
+    prog.add_kernel(k1)
+    prog.compile()
+    qasm = 'test_output/QAQC.qasm'
+    qasmVerConv('test_output/tmp.qasm', qasm)
+    return qasm
 
 
 # Parameterized rotation gate matrices: http://www.mpedram.com/Papers/Rotation-based-DDSyn-QICJ.pdf
