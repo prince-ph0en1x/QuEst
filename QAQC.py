@@ -17,64 +17,39 @@ qx = qxelarator.QX()
 
 
 """
-Firefighting solution as Qxelarator is not updated to run cQASM v1.0
-Open Issue: https://github.com/QE-Lab/qx-simulator/issues/57
-Converts OpenQL generated cQASM to old Qxelerator compatible syntax
-"""
-def qasmVerConv(qasm_in, qasm_out):
-    file = open(qasm_in,"r")
-    fileopt = open(qasm_out,"w")
-    header = True
-    for line in file:
-        if header:
-            header = False
-        else:
-            x = re.sub('\[','', line)
-            x = re.sub('\]','', x)
-            fileopt.write(x)
-    file.close()
-    fileopt.close()
-
-
-"""
-Read the lines of an input QASM circuit that is to be compiled against
+Read the lines of the input QASM circuit to be matched by the parameterized test circuit
 """
 def read_input_circuit(qasm):
     global NUM_QUBIT
-    lines = []
+    code = ''
     with open(qasm, 'r') as f:
+        flag = False
         for line in f.readlines():
-            if line.startswith('#'):
-                continue
+            if flag and not line.strip().startswith('#'):
+                code += line
+            elif line.startswith('.'): # Wait until a kernel is reached
+                flag = True
             elif line.startswith('qubits'):
                 NUM_QUBIT = int(line.split(' ')[1])
-            elif not line.startswith('.'):
-                lines.append(line)
 
-    return lines
+    return code
     
 
 """
-Create the initial HST circuit, including the reference circuit (U)
+Create the initial portion of the HST circuit
 """
-def pre_hst_qasm(U):
+def pre_hst_qasm():
     config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
     platform = ql.Platform('platform_none', config_fn)
-    prog = ql.Program('tmp', platform, 2*NUM_QUBIT)
-    k1 = ql.Kernel('QK1',platform, 2*NUM_QUBIT)
+    prog = ql.Program('pre_hst', platform, 2*NUM_QUBIT)
+    k1 = ql.Kernel('QK1', platform, 2*NUM_QUBIT)
 
     for q in range(NUM_QUBIT):
         k1.gate('h', [q])
         k1.gate('cnot', [q, NUM_QUBIT + q])
 
     prog.add_kernel(k1)
-    prog.compile()
-    qasm = 'test_output/pre_hst.qasm'
-    qasmVerConv('test_output/tmp.qasm', qasm)
-
-    with open(qasm, 'a') as f:
-        f.writelines(U)
-
+    qasm = prog.qasm()
     return qasm
 
 
@@ -85,7 +60,7 @@ is created. Otherwise, the Local HST is created for the specified qubit number
 def post_hst_qasm(qubit=None):
     config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
     platform = ql.Platform('platform_none', config_fn)
-    prog = ql.Program('tmp', platform, 2*NUM_QUBIT)
+    prog = ql.Program('post_hst', platform, 2*NUM_QUBIT)
     k1 = ql.Kernel('QK1',platform, 2*NUM_QUBIT)
 
     if qubit is None:
@@ -102,27 +77,33 @@ def post_hst_qasm(qubit=None):
         k1.measure(qubit + NUM_QUBIT)
 
     prog.add_kernel(k1)
-    prog.compile()
-    qasm = 'test_output/post_hst.qasm'
-    qasmVerConv('test_output/tmp.qasm', qasm)
-    return qasm
+    tmp = prog.qasm().split('\n')
+    qasm = []
+
+    # Remove unnecessary lines from the post-HST QASM code
+    for l in tmp:
+        if l.startswith(('#', '.', 'version', 'qubits')) or l == '':
+            continue
+        qasm.append(l + '\n')
+    
+    return ''.join(qasm)
 
 
 """
-Create the QASM for the test circuit using the provided parameters (e.g. angles)
+Create the QASM for the parameterized circuit
 """
-def test_sequence_qasm(params, locality, blocks):
+def parameterized_circuit_qasm(locality, blocks):
     config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
     platform = ql.Platform('platform_none', config_fn)
-    prog = ql.Program('tmp', platform, 2*NUM_QUBIT)
+    prog = ql.Program('test_circuit', platform, 2*NUM_QUBIT)
     k1 = ql.Kernel('QK1',platform, 2*NUM_QUBIT)
 
     for i in range(blocks):
         for q in range(NUM_QUBIT):
             b = q*3 + 3*NUM_QUBIT*i
-            k1.rz(q + NUM_QUBIT, params[b])
-            k1.rx(q + NUM_QUBIT, params[b + 1])
-            k1.rz(q + NUM_QUBIT, params[b + 2])
+            k1.rz(q + NUM_QUBIT, b)
+            k1.rx(q + NUM_QUBIT, b + 1)
+            k1.rz(q + NUM_QUBIT, b + 2)
 
         for q in range(NUM_QUBIT, 2*NUM_QUBIT):
             k = 1
@@ -131,44 +112,45 @@ def test_sequence_qasm(params, locality, blocks):
                 k += 1
 
     prog.add_kernel(k1)
-    prog.compile()
-    qasm = 'test_output/test_circuit.qasm'
-    qasmVerConv('test_output/tmp.qasm', qasm)
-    return qasm
+    tmp = prog.qasm().split('\n')
+    qasm = []
+
+    # Remove unnecessary lines from the parameterized QASM code
+    for l in tmp:
+        if l.startswith(('#', '.', 'version', 'qubits')) or l == '':
+            continue
+        qasm.append(l + '\n')
+
+    # Add stubs indicating where to place parameters in the QASM
+    q = 0
+    for i in range(len(qasm)):
+        search = str(q)+'.000000'
+        if search in qasm[i]:
+            qasm[i] = qasm[i].replace(search, '%' + str(q) + '%')
+            q += 1
+
+    return ''.join(qasm)
 
 
 """
 Merge all necessary QASM files to create a usable HST circuit
 """
-def merge_qasms(pre, V, post):
+def merge_qasms(pre, circ, v, post):
+    qasm = pre + '\n' + circ + '\n' + v + '\n' + post
+    return qasm
+
+
+"""
+Update the parameters in the HST QASM using the given parameters
+"""
+def update_hst_parameters(params, hst):
+    tmp = str(hst)
+    for p in range(len(params)):
+        tmp = tmp.replace('%' + str(p) + '%', '{:.6f}'.format(params[p]))
+
     qasm = 'test_output/hst.qasm'
-    lines = []
-    with open(pre, 'r') as f:
-        for line in f.readlines():
-            lines.append(line)
-
-    lines.append('\n')
-
-    with open(V, 'r') as f:
-        flag = False
-        for line in f.readlines():
-            if flag:
-                lines.append(line)
-            elif line.startswith('.'): # Wait until a kernel is reached
-                flag = True
-    
-    lines.append('\n')
-
-    with open(post, 'r') as f:
-        flag = False
-        for line in f.readlines():
-            if flag:
-                lines.append(line)
-            elif line.startswith('.'): # Wait until a kernel is reached
-                flag = True
-    
     with open(qasm, 'w') as f:
-        f.writelines(lines)
+        f.write(tmp)
 
     return qasm
 
@@ -176,7 +158,7 @@ def merge_qasms(pre, V, post):
 """
 Run the HST circuit #trials# times and calculate the probability that all measurements are 0.
 This corresponds to the magnitude of the Hilbert-Schmidt inner product and is used as the cost
-function from the aforementioned paper
+function from the paper linked at the top of this file
 """
 def evaluate_hst(qasm, trials=100):
     global qx
@@ -184,7 +166,7 @@ def evaluate_hst(qasm, trials=100):
 
     p = 0
     for _ in range(trials):
-        qx.execute()
+        qx.execute(False)
         c = [qx.get_measurement_outcome(i) for i in range(2*NUM_QUBIT)]
 
         if sum(c) == 0:
@@ -193,29 +175,30 @@ def evaluate_hst(qasm, trials=100):
     return p/trials
 
 
-def hst_cost(params, pre, post, locality, blocks, trials=100):
-    v_hst = test_sequence_qasm(params, locality, blocks)
-    hst = merge_qasms(pre, v_hst, post)
-    cost = evaluate_hst(hst, trials=trials)
+def hst_cost(params, hst, trials=100):
+    qasm = update_hst_parameters(params, hst)
+    cost = evaluate_hst(qasm, trials=trials)
     return 1 - cost
 
 
 def optimize(qasm, locality, blocks, runs=3, x0=None, trials=200):
     circ = read_input_circuit(qasm)
-    pre = pre_hst_qasm(circ)
+    pre = pre_hst_qasm()
     post = post_hst_qasm()
+    v = parameterized_circuit_qasm(locality, blocks)
+    hst = merge_qasms(pre, circ, v, post)
 
     if x0 is None:
         x0 = [0 for _ in range(3*NUM_QUBIT*blocks)]
 
-    inc = [-np.pi, -np.pi/2, 0, np.pi/2, np.pi]
+    inc = [0, -np.pi/2, -np.pi/4, np.pi/4, np.pi/2]
     min_cost = 1
     min_x0 = []
     order = list(range(len(x0)))
 
     for z in range(runs):
-        if z == int(runs/1.5):
-            inc = [x/2 for x in inc]
+        #if z == int(runs/1.5):
+        #    inc = [x/2 for x in inc]
 
         random.shuffle(order)
         for i in order:
@@ -223,7 +206,7 @@ def optimize(qasm, locality, blocks, runs=3, x0=None, trials=200):
             for j in inc:
                 x = list(x0)
                 x[i] += j
-                a = hst_cost(x, pre, post, locality, blocks, trials=trials)
+                a = hst_cost(x, hst, trials=trials)
                 c.append(a)
                 if a < min_cost:
                     min_cost = a
@@ -241,12 +224,14 @@ def optimize(qasm, locality, blocks, runs=3, x0=None, trials=200):
 def generate_output_qasm(params, locality, blocks):
     config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
     platform = ql.Platform('platform_none', config_fn)
-    prog = ql.Program('tmp', platform, NUM_QUBIT)
+    prog = ql.Program('QAQC', platform, NUM_QUBIT)
     k1 = ql.Kernel('QAQC',platform, NUM_QUBIT)
 
     for i in range(blocks):
         for q in range(NUM_QUBIT):
             b = q*3 + 3*NUM_QUBIT*i
+            # Note the parameters are conjugated because the circuit is intrinsically
+            # optimized for V*, not V, so rx and rz gates have negated parameters
             k1.rz(q, -params[b])
             k1.rx(q, -params[b + 1])
             k1.rz(q, -params[b + 2])
@@ -260,13 +245,10 @@ def generate_output_qasm(params, locality, blocks):
     prog.add_kernel(k1)
     prog.compile()
     qasm = 'test_output/QAQC.qasm'
-    qasmVerConv('test_output/tmp.qasm', qasm)
     return qasm
 
 
 # Parameterized rotation gate matrices: http://www.mpedram.com/Papers/Rotation-based-DDSyn-QICJ.pdf
-
-
 def Rx(O):
     return [[cos(O/2), -1j*sin(O/2)], [-1j*sin(O/2), cos(O/2)]]
     

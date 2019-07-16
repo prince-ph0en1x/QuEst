@@ -9,6 +9,7 @@ from itertools import product
 
 NUM_QUBIT = 0
 PI_2 = np.pi/2
+qx = qxelarator.QX()
 
 TOMOGRAPHY_GATES = OrderedDict([('i','Identity'),
 								('x','Pauli-X'),
@@ -29,33 +30,28 @@ eigens = {'i':eig0, 'x':eig1, 'y':eig1, 'z':eig1}
 """
 Append tomographic rotations and measurements to base qasm and return path to new qasm file
 """
-def prep_trial(t_rot, qasm):
-    file = open(qasm, "r")
-    temp = os.path.dirname(qasm) + '/tomo.qasm'
-    fileopt = open(temp, "w")
-
-    for line in file:
-        fileopt.write(line)
-    file.close()
+def prep_trial(t_rot, code):
+    qasm = 'test_output/tomo.qasm'
+    with open(qasm, 'w') as f:
+        f.write(code)
+        f.write(t_rot)
+        for i in range(NUM_QUBIT):
+            f.write("    measure q[" + str(i) + "]\n")
     
-    fileopt.write(t_rot)
-    for i in range(NUM_QUBIT):
-        fileopt.write("measure q" + str(i) + "\n")
-    fileopt.close()
-    
-    return temp
+    return qasm
 
 
 """
 Invokes Qxelerator and returns measurement statistics in the Z-basis (computational)
 """   
 def run_trials(qasm, trials):
-    qx = qxelarator.QX()
+    global qx
     qx.set(qasm)
+    
     p = np.zeros(2**NUM_QUBIT)
     c = np.zeros(NUM_QUBIT, dtype=bool)
     for _ in range(trials):
-        qx.execute()
+        qx.execute(False)
         for i in range(NUM_QUBIT):
             c[i] = qx.get_measurement_outcome(i)
         idx = sum(v<<i for i, v in enumerate(c[::-1]))
@@ -70,19 +66,21 @@ Generate a tomographic histogram for the given qasm file through repeated rotati
 """
 def generate_histogram(qasm, trials):
     stats = []
+    code = ''
+    with open(qasm, 'r') as f:
+        code = f.read()
+
     for bases in product(TOMOGRAPHY_GATES.keys(), repeat=NUM_QUBIT):
         t_rot = ""
         qubit = NUM_QUBIT - 1 # The leftmost basis is for the MSB (n-th) qubit, so qubit number decreases from n
         for b in bases:
             if b == 'x':
-                t_rot += ('ry q' + str(qubit) + ", " + str(-PI_2) + "\n")
+                t_rot += ('    ry q[' + str(qubit) + "], " + str(-PI_2) + "\n")
             elif b == 'y':
-                t_rot += ('rx q' + str(qubit) + ", " + str(PI_2) + "\n")
+                t_rot += ('    rx q[' + str(qubit) + "], " + str(PI_2) + "\n")
             # In the current setup, no rotation is needed to measure in the z-basis
-            # elif b == 'z':
-            #     t_rot += ('rz q' + str(qubit) + ", " + str(PI_2) + "\n")
             qubit -= 1
-        tomo = prep_trial(t_rot, qasm)
+        tomo = prep_trial(t_rot, code)
         stat = run_trials(tomo, trials)
         stats.append(stat)
     return stats

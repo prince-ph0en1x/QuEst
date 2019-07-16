@@ -3,36 +3,10 @@ import QAQC
 import random
 
 
-def test1(qasm):
-    from itertools import product
-
-    U = QAQC.read_input_circuit(qasm)
-    pre_hst = QAQC.pre_hst_qasm(U)
-    post_hst = QAQC.post_hst_qasm()
-    locality = 2
-
-    from random import random
-    costs = []
-    for blocks in range(1, 5):
-        d = []
-        min_d = 1
-        #min_x = 0
-        for _ in range(500):
-            x0 = [random()*np.pi for _ in range(3*QAQC.NUM_QUBIT*blocks)]
-            d.append(QAQC.hst_cost(x0, pre_hst, post_hst, locality, blocks))
-            if d[-1] < min_d:
-                #min_x = x0
-                min_d = d[-1]
-        #res = minimize(QAQC.hst_cost, min_x, args=(pre_hst, post_hst, locality, blocks), method='Powell', tol=1e-10)
-        costs.append(min_d)
-    print(costs)
-
-
 def test2(qasm, locality, blocks):
-    c, x = QAQC.optimize(qasm, locality, blocks, runs=5)
+    c, x = QAQC.optimize(qasm, locality, blocks, runs=3, trials=200)
     print('Cost:', c)
-    x = np.array(x) / np.pi
-    print('Params: pi *', list(x))
+    print('Params: pi *', list(np.array(x) / np.pi))
 
     QAQC.generate_output_qasm(x, locality, blocks)
 
@@ -152,11 +126,11 @@ def test5(qasm, locality, blocks):
 if __name__ == '__main__':
     import sys
 
-    orig_stdout = sys.stdout
-    f = open('out', 'w')
-    sys.stdout = f
+    #orig_stdout = sys.stdout
+    #f = open('out', 'w')
+    #sys.stdout = f
 
-    test2("test_output/algo.qasm", 2, 2)
+    test2("test_output/algo.qasm", 2, 4)
 
-    sys.stdout = orig_stdout
-    f.close()
+    #sys.stdout = orig_stdout
+    #f.close()
