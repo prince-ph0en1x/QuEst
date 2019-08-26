@@ -9,29 +9,27 @@ from math import cos,sin
 from cmath import exp
 
 
-NUM_QUBIT = 0
+METHOD = "state" # Used to select between using QX.get_state() or running trials for getting the HST cost
+NUM_QUBIT = None
 qx = qxelarator.QX()
 
-
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 # HST refers to Hilbert-Schmidt Test circuit from https://arxiv.org/pdf/1807.00800.pdf
-
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 """
-Read the lines of the input QASM circuit to be matched by the parameterized test circuit
+Read the lines of the reference QASM circuit to be matched by the parameterized test circuit
 """
 def read_input_circuit(qasm):
     global NUM_QUBIT
     code = ''
     with open(qasm, 'r') as f:
-        flag = False
         for line in f.readlines():
-            if flag and not line.strip().startswith('#'):
-                code += line
-            elif line.startswith('.'): # Wait until a kernel is reached
-                flag = True
-            elif line.startswith('qubits'):
-                NUM_QUBIT = int(line.split(' ')[1])
-
+            l = line.strip()
+            if l.startswith('qubits'):
+                NUM_QUBIT = int(l.split(' ')[1])
+            elif not l.startswith(('#', '.', 'version')):
+                code += l
     return code
     
 
@@ -39,7 +37,7 @@ def read_input_circuit(qasm):
 Create the initial portion of the HST circuit
 """
 def pre_hst_qasm():
-    config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
+    config_fn = os.path.abspath('test_cfg_none_simple.json')
     platform = ql.Platform('platform_none', config_fn)
     prog = ql.Program('pre_hst', platform, 2*NUM_QUBIT)
     k1 = ql.Kernel('QK1', platform, 2*NUM_QUBIT)
@@ -58,7 +56,7 @@ Create the ending portion of the HST circuit. When qubit is None, the full HST c
 is created. Otherwise, the Local HST is created for the specified qubit number
 """
 def post_hst_qasm(qubit=None):
-    config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
+    config_fn = os.path.abspath('test_cfg_none_simple.json')
     platform = ql.Platform('platform_none', config_fn)
     prog = ql.Program('post_hst', platform, 2*NUM_QUBIT)
     k1 = ql.Kernel('QK1',platform, 2*NUM_QUBIT)
@@ -67,14 +65,15 @@ def post_hst_qasm(qubit=None):
         for q in range(NUM_QUBIT):
             k1.gate('cnot', [q, q + NUM_QUBIT])
             k1.gate('h', [q])
-
-        for q in range(2 * NUM_QUBIT):
-            k1.measure(q)
+        if METHOD != "state":
+            for q in range(2 * NUM_QUBIT):
+                k1.measure(q)
     else:
         k1.gate('cnot', [qubit, qubit + NUM_QUBIT])
         k1.gate('h', [qubit])
-        k1.measure(qubit)
-        k1.measure(qubit + NUM_QUBIT)
+        if METHOD != "state":
+            k1.measure(qubit)
+            k1.measure(qubit + NUM_QUBIT)
 
     prog.add_kernel(k1)
     tmp = prog.qasm().split('\n')
@@ -92,11 +91,11 @@ def post_hst_qasm(qubit=None):
 """
 Create the QASM for the parameterized circuit
 """
-def parameterized_circuit_qasm(locality, blocks):
-    config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
+def parameterized_circuit_qasm(entangler, blocks):
+    config_fn = os.path.abspath('test_cfg_none_simple.json')
     platform = ql.Platform('platform_none', config_fn)
     prog = ql.Program('test_circuit', platform, 2*NUM_QUBIT)
-    k1 = ql.Kernel('QK1',platform, 2*NUM_QUBIT)
+    k1 = ql.Kernel('QK1', platform, 2*NUM_QUBIT)
 
     for i in range(blocks):
         for q in range(NUM_QUBIT):
@@ -105,14 +104,13 @@ def parameterized_circuit_qasm(locality, blocks):
             k1.rx(q + NUM_QUBIT, b + 1)
             k1.rz(q + NUM_QUBIT, b + 2)
 
-        for q in range(NUM_QUBIT, 2*NUM_QUBIT):
-            k = 1
-            while k < locality and q + k < 2*NUM_QUBIT:
-                k1.cz(q, q + k)
-                k += 1
+        for pair in entangler:
+            pair = [p + NUM_QUBIT for p in pair]
+            k1.gate('cnot', pair)
 
     prog.add_kernel(k1)
     tmp = prog.qasm().split('\n')
+    prog.compile()
     qasm = []
 
     # Remove unnecessary lines from the parameterized QASM code
@@ -143,12 +141,13 @@ def merge_qasms(pre, circ, v, post):
 """
 Update the parameters in the HST QASM using the given parameters
 """
-def update_hst_parameters(params, hst):
-    tmp = str(hst)
+def update_qasm_parameters(params, circ, qasm='test_output/hst.qasm'):
+    tmp = str(circ) # Ensure a new copy of the circuit is created
     for p in range(len(params)):
-        tmp = tmp.replace('%' + str(p) + '%', '{:.6f}'.format(params[p]))
+        stub = '%' + str(p) + '%'
+        ang  = '{:.6f}'.format(params[p])
+        tmp = tmp.replace(stub, ang)
 
-    qasm = 'test_output/hst.qasm'
     with open(qasm, 'w') as f:
         f.write(tmp)
 
@@ -160,7 +159,7 @@ Run the HST circuit #trials# times and calculate the probability that all measur
 This corresponds to the magnitude of the Hilbert-Schmidt inner product and is used as the cost
 function from the paper linked at the top of this file
 """
-def evaluate_hst(qasm, trials=100):
+def evaluate_hst_trials(qasm, trials):
     global qx
     qx.set(qasm)
 
@@ -175,38 +174,91 @@ def evaluate_hst(qasm, trials=100):
     return p/trials
 
 
-def hst_cost(params, hst, trials=100):
-    qasm = update_hst_parameters(params, hst)
-    cost = evaluate_hst(qasm, trials=trials)
+"""
+Parses QX state string using regex and returns probabilities of each state in ordered list
+"""
+def parse_get_state(s):
+    nums = re.findall(r'[-+.e\d]+,[-+.e\d]+', s) # Regex to find all complex numbers in state string
+    bras = re.findall(r'\|[01]+>', s) # Regex to find all bra-kets in state string
+    comp = []
+    ind  = []
+    poss = 0
+
+    # Convert all complex number strings to complex objects
+    for n in nums:
+        t = n.split(',')
+        comp.append( complex(float(t[0]), float(t[1])) )
+
+    # Convert all bra-kets to indices
+    for b in bras:
+        t = b.strip('|').strip('>')
+        poss = 2**(len(t))
+        ind.append( int(t, base=2) )
+
+    # Add complex numbers to an ordered list
+    C = [0 for _ in range(poss)]
+    for i, c in enumerate(comp):
+        j = ind[i]
+        C[j] = c
+
+    return C
+
+
+"""
+Run the HST circuit and retrieve state probabilities using the built-in QX get_state function.
+The probability of the all-zero state is returned as the cost
+"""
+def evaluate_hst_state(qasm):
+    global qx
+    qx.set(qasm)
+    qx.execute()
+    probs = parse_get_state(qx.get_state())
+    return probs[0].real
+
+
+"""
+Runs the HST with updated parameters and returns the appropriate cost
+"""
+def hst_cost(params, hst, trials):
+    qasm = update_qasm_parameters(params, hst)
+    if METHOD == "state":
+        cost = evaluate_hst_state(qasm)
+    else:
+        cost = evaluate_hst_trials(qasm, trials)
     return 1 - cost
 
 
-def optimize(qasm, locality, blocks, runs=3, x0=None, trials=200):
+"""
+Generates the HST QASM and returns the code as a string
+"""
+def hst_test(qasm, ent, blocks):
     circ = read_input_circuit(qasm)
     pre = pre_hst_qasm()
     post = post_hst_qasm()
-    v = parameterized_circuit_qasm(locality, blocks)
+    v = parameterized_circuit_qasm(ent, blocks)
     hst = merge_qasms(pre, circ, v, post)
+    return hst
 
-    if x0 is None:
-        x0 = [0 for _ in range(3*NUM_QUBIT*blocks)]
 
+"""
+Main function for optimizing a variational quantum circuit to match a reference circuit using the HST
+"""
+def optimize(hst, param_len, runs=200, trials=200):
     inc = [0, -np.pi/2, -np.pi/4, np.pi/4, np.pi/2]
     min_cost = 1
     min_x0 = []
-    order = list(range(len(x0)))
 
-    for z in range(runs):
-        #if z == int(runs/1.5):
-        #    inc = [x/2 for x in inc]
-
+    for _ in range(runs):
+        x0 = [random.randint(0, 4) * np.pi/4 for _ in range(param_len)]
+        inc = [0] + [-random.random()*np.pi/2 for _ in range(2)] + [random.random()*np.pi/2 for _ in range(2)]
+        order = list(range(len(x0)))
         random.shuffle(order)
         for i in order:
             c = []
             for j in inc:
                 x = list(x0)
                 x[i] += j
-                a = hst_cost(x, hst, trials=trials)
+                a = hst_cost(x, hst, trials)
                 c.append(a)
                 if a < min_cost:
                     min_cost = a
@@ -218,44 +270,5 @@ def optimize(qasm, locality, blocks, runs=3, x0=None, trials=200):
         if min_cost == 0:
             break
 
+    update_qasm_parameters(min_x0, hst, qasm='test_output/QAQC.qasm')
     return min_cost, min_x0
-
-
-def generate_output_qasm(params, locality, blocks):
-    config_fn = os.path.abspath('/home/neil/dev/tud/OpenQL/tests/test_cfg_none_simple.json')
-    platform = ql.Platform('platform_none', config_fn)
-    prog = ql.Program('QAQC', platform, NUM_QUBIT)
-    k1 = ql.Kernel('QAQC',platform, NUM_QUBIT)
-
-    for i in range(blocks):
-        for q in range(NUM_QUBIT):
-            b = q*3 + 3*NUM_QUBIT*i
-            # Note the parameters are conjugated because the circuit is intrinsically
-            # optimized for V*, not V, so rx and rz gates have negated parameters
-            k1.rz(q, -params[b])
-            k1.rx(q, -params[b + 1])
-            k1.rz(q, -params[b + 2])
-
-        for q in range(NUM_QUBIT):
-            k = 1
-            while k < locality and q + k < NUM_QUBIT:
-                k1.cz(q, q + k)
-                k += 1
-
-    prog.add_kernel(k1)
-    prog.compile()
-    qasm = 'test_output/QAQC.qasm'
-    return qasm
-
-
-# Parameterized rotation gate matrices: http://www.mpedram.com/Papers/Rotation-based-DDSyn-QICJ.pdf
-def Rx(O):
-    return [[cos(O/2), -1j*sin(O/2)], [-1j*sin(O/2), cos(O/2)]]
-    
-
-def Ry(O):
-    return [[cos(O/2), -sin(O/2)], [sin(O/2), cos(O/2)]]
-
-                    
-def Rz(O):
-    return [[exp(-1j*O/2), 0], [0, exp(1j*O/2)]]
